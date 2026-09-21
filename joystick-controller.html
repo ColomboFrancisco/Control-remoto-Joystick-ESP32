@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bot Joystick</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg_color: #1B1B1D;
+            --light_green_bg: #2F4F4F;
+            --dark_green_bg: #233b3b;
+        }
+
+        html, body {
+            margin: 0;
+            min-height: 100%;
+        }
+
+        body {
+            background-color: var(--bg_color);
+        }
+
+        .row {  /* Used as the central row containig both columns for the controller */
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 24px;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .column {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            padding-left: 15px;
+            padding-right: 15px;
+        }
+
+        .button2 {
+            background-color: var(--light_green_bg);
+            color: var(--bg_color);
+            border: none;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 20px;
+            cursor: pointer;
+            border-radius: 25px;
+        }
+
+        :root {
+            /* Always smaller than the viewport */
+            --joystick-size: min(510px, 85vmin);
+        }
+
+        .parent-container {
+            position: relative;
+            width: var(--joystick-size);
+            height: var(--joystick-size);
+            flex-shrink: 0;
+        }
+
+        .button {
+            width: 100%;
+            height: 100%;
+            padding: 0;
+            border: none;
+            display: block;
+            cursor: pointer;
+            background-color: var(--light_green_bg);
+        }
+
+        .joystick-button {
+            border-radius: 50%;
+        }
+
+        .top-layer {
+            /* aprox 110px knob inside a 510px base */
+            position: absolute;
+            width: 21.6%;
+            height: 21.6%;
+            top: 39.2%;
+            left: 39.2%;
+            z-index: 2;
+            pointer-events: none;
+        }
+
+        .center-circle {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-color: var(--dark_green_bg);
+            border-radius: 50%;
+        }
+    </style>
+    <meta name="viewport" content="user-scalable=no">
+</head>
+
+<body id="body">
+    <div class="row" style="align-items: start;">
+        <div class="column">
+            <div style="display: flex; gap: 8px; vertical-align: top;">
+                <button class="button2" onclick="onConnectClick();" id="connectButton" style="background-color: #ad0505;">Connect</button>
+                <button class="button2" onclick="openFullscreen();">Fullscreen</button>
+            </div>
+
+            <div style="height: 20px;"></div>
+
+            <button class="button2" onclick="toggleServos()" id="servoButton" style="width: 100%; padding-top: 40px; padding-bottom: 40px; background-color: #ad0505; border-radius: 50pc;">Servos</button>
+
+            <!--
+                --DEBUG INFO--
+            <p>Cursor position:</p>
+            <p id="position"></p>
+            <p>Screen size:</p>
+            <p id="screenSize"></p>
+            <p>Joystick distance:</p>
+            <p id="jDistance"></p>
+            -->
+        </div>
+
+        <div class="column">
+            <div class="parent-container">
+                <button id="joystickButton" class="button joystick-button"></button>
+                <div class="top-layer">
+                    <div class="center-circle" id="centerCircle"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        //    --DEBUG INFO--
+        //const positionElement = document.getElementById("position");
+        //const screenSizeElement = document.getElementById("screenSize");
+        //const joystickDistanceElement = document.getElementById("jDistance");
+
+        const connectButton = document.getElementById("connectButton");
+        const joystickButtonElement = document.getElementById("joystickButton");
+        const joystickCenterCircle = document.getElementById("centerCircle");
+        const servoButton = document.getElementById("servoButton");
+
+        const MAX_JOYSTICK_DISTANCE = 255; // maximum input accepted by the backend
+        const KNOB_RADIUS_RATIO = 55 / 255; // the knob refers to the center circle of the joystick, and its radius is determined from the base radius
+        
+        let ws = null; // websocket (connection with the backend)
+
+        let mouseDown = false;
+
+        var PWMX = 0; // global, processed input
+        var PWMY = 0;
+        var ServoState = false;
+
+        // -- WebSocket connection --
+
+        function onConnectClick() {
+            if (!ws) {
+                ws = new WebSocket("ws://" + window.location.hostname + ":81");
+                ws.onopen = handleWsOpen;
+                ws.onclose = handleWsClose;
+                ws.onerror = handleWsError;
+                ws.onmessage = handleWsMessage;
+            } else {
+                ws.close();
+            }
+        }
+
+        function sendAction() {
+            //    --DEBUG INFO--
+            //console.log("x: " + PWMX + ",  y:" + PWMY);
+
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send("x" + PWMX);
+                ws.send("y" + PWMY);
+            }
+        }
+
+        function handleWsOpen() {
+            console.log("Connected");
+            connectButton.textContent = "Disconnect";
+            connectButton.style.backgroundColor = "#37ad05";
+        }
+
+        function handleWsClose() {
+            console.log("Disconnected");
+            connectButton.textContent = "Connect";
+            connectButton.style.backgroundColor = "#ad0505";
+            ws = null;
+        }
+
+        function handleWsError(err) {
+            console.log("WebSocket error:", err);
+        }
+
+        function handleWsMessage(event) {
+            console.log(event.data);
+        }
+
+        // -- Fullscreen button --
+
+        function openFullscreen() {
+            const target = document.documentElement;
+            if (document.fullscreenElement) {
+                document.exitFullscreen();
+            } else if (target.requestFullscreen) {
+                target.requestFullscreen();
+            } else if (target.webkitRequestFullscreen) { // Safari
+                target.webkitRequestFullscreen();
+            } else if (target.msRequestFullscreen) { // IE11
+                target.msRequestFullscreen();
+            }
+        }
+
+        function toggleServos(){
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ServoState = !ServoState;
+                ws.send("s" + ServoState);
+                if (ServoState){
+                    servoButton.style.backgroundColor = "#37ad05";
+                }
+                else {
+                    servoButton.style.backgroundColor = "#ad0505";
+                }
+            }
+        }
+
+
+        // --- Joystick input ---
+
+        joystickButtonElement.addEventListener("mousedown", () => { mouseDown = true; });
+        joystickButtonElement.addEventListener("touchstart", (e) => {
+            mouseDown = true;
+            e.preventDefault();
+        }, { passive: false });
+
+        document.body.onmouseup = () => { mouseDown = false; };
+        document.body.ontouchend = (e) => {
+            // Only process this touchend (and the click it would otherwise trigger) if it's ending a joystick drag.
+            // Letting every other touchend through by default keeps taps on the Connect/Fullscreen buttons working normally on mobile.
+            if (mouseDown) {
+                e.preventDefault();
+            }
+            mouseDown = false;
+        };
+
+        function getPointerXY(event) {
+            if (event.touches && event.touches.length > 0) {
+                return { x: event.touches[0].clientX, y: event.touches[0].clientY };
+            }
+            if (event.changedTouches && event.changedTouches.length > 0) {
+                return { x: event.changedTouches[0].clientX, y: event.changedTouches[0].clientY };
+            }
+            return { x: event.clientX, y: event.clientY };
+        }
+
+        function updateCursorPosition(event) {
+            const { x: cursorX, y: cursorY } = getPointerXY(event);
+            const screenX = window.innerWidth;
+            const screenY = window.innerHeight;
+
+            const joystickPos = joystickButtonElement.getBoundingClientRect();
+            const joystickPosX = joystickPos.x + joystickPos.width / 2;
+            const joystickPosY = joystickPos.y + joystickPos.height / 2;
+
+            const rawInputX = (cursorX - joystickPosX)*510/joystickPos.width;
+            const rawInputY = -(cursorY - joystickPosY)*510/joystickPos.height;
+            const inputDistance = Math.sqrt(rawInputX ** 2 + rawInputY ** 2);
+
+            let inputX = rawInputX;
+            let inputY = rawInputY;
+
+            if (inputDistance > MAX_JOYSTICK_DISTANCE) {
+                inputX = (rawInputX / inputDistance) * MAX_JOYSTICK_DISTANCE;
+                inputY = (rawInputY / inputDistance) * MAX_JOYSTICK_DISTANCE;
+            }
+
+            // Scale the knob's visual travel so it works at any screen size.
+            const containerRadius = joystickPos.width / 2;
+            const safeOffset = containerRadius * (1 - KNOB_RADIUS_RATIO);
+
+            if (mouseDown) {
+                PWMX = Math.round(inputX);
+                PWMY = Math.round(inputY);
+
+                //    --DEBUG INFO--
+                //joystickDistanceElement.textContent = `X: ${PWMX}, Y: ${PWMY}`;
+                joystickCenterCircle.style.marginTop = `${(-inputY / MAX_JOYSTICK_DISTANCE) * safeOffset}px`;
+                joystickCenterCircle.style.marginLeft = `${(inputX / MAX_JOYSTICK_DISTANCE) * safeOffset}px`;
+            } else {
+                PWMX = 0;
+                PWMY = 0;
+
+                //    --DEBUG INFO--
+                //joystickDistanceElement.textContent = "None";
+                joystickCenterCircle.style.marginTop = "0px";
+                joystickCenterCircle.style.marginLeft = "0px";
+            }
+
+            //    --DEBUG INFO--
+            //positionElement.textContent = `X: ${Math.round(cursorX)}, Y: ${Math.round(cursorY)}, Is pressed: ${mouseDown}`;
+            //screenSizeElement.textContent = `X: ${screenX}, Y: ${screenY}`;
+        }
+
+        setInterval(sendAction, 40);
+        document.addEventListener("mousemove", updateCursorPosition);
+        document.addEventListener("mouseup", updateCursorPosition);
+        document.addEventListener("mousedown", updateCursorPosition);
+
+        document.addEventListener("touchmove", (e) => {
+            updateCursorPosition(e);
+            e.preventDefault();
+        }, { passive: false });
+        document.addEventListener("touchstart", updateCursorPosition);
+        document.addEventListener("touchend", updateCursorPosition);
+    </script>
+</body>
+</html>
