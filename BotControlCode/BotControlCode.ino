@@ -10,7 +10,7 @@ const int SERVO_2_PIN = 26;
 
 // Posic.
 const int POSICION_ABAJO = 0;
-const int POSICION_ARRIBA = 45;
+const int POSICION_ARRIBA = 255;
 
 
 const int R_MotorForward = 12;
@@ -79,32 +79,31 @@ void loop() {
 
 }
 
+
 void manual_motor_control(int pwmx, int pwmy) {
-  const int minInput = 60;
+  const int minInput = 10;
 
   //pwmy = -pwmy;
   //pwmx = pwmx/2;
 
   // Calculate motor speeds
-  int motor1 = -(pwmy + pwmx);
-  int motor2 = (pwmy - pwmx);
+  int motor1 = (-pwmy + pwmx)+30;
+  int motor2 = (pwmy + pwmx)+30;
 
   // Clamp values to PWM range (0–255)
   motor1 = constrain(motor1, -255, 255);
   motor2 = constrain(motor2, -255, 255);
-  Serial.println(motor1);
-  Serial.println(motor2);
 
   //motor2 = motor2 * 0.90; //percentage of power
   
   // Motor 1 control  
   if (motor1 > minInput) {
-    analogWrite(R_MotorForward, sqrt(motor1));
+    analogWrite(R_MotorForward, motor1);
     analogWrite(R_MotorBack, 0);
     
   } else if (motor1 < -minInput) {
     analogWrite(R_MotorForward, 0);
-    analogWrite(R_MotorBack, sqrt(-motor1));
+    analogWrite(R_MotorBack, -motor1);
     //Serial.println("Motor 1 backward");
   } else {
     analogWrite(R_MotorForward, 0);
@@ -114,12 +113,12 @@ void manual_motor_control(int pwmx, int pwmy) {
 
   // Motor 2 control
   if (motor2 > minInput) {
-    analogWrite(L_MotorForward, sqrt(motor2));
+    analogWrite(L_MotorForward, motor2);
     analogWrite(L_MotorBack, 0);
     
   } else if (motor2 < -minInput) {
     analogWrite(L_MotorForward, 0);
-    analogWrite(L_MotorBack, sqrt(-motor2));
+    analogWrite(L_MotorBack, -motor2);
     //Serial.println("Motor 2 backward");
   } else {
     analogWrite(L_MotorForward, 0);
